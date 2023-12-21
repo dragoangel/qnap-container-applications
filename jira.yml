@@ -1,0 +1,76 @@
+version: '3'
+services:
+  jira:
+    container_name: jira
+    image: atlassian/jira-software:9.12
+    restart: unless-stopped
+    stop_grace_period: 1m30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.jira-secure-headers.headers.framedeny=true"
+      - "traefik.http.middlewares.jira-secure-headers.headers.contenttypenosniff=true"
+      - "traefik.http.middlewares.jira-secure-headers.headers.browserxssfilter=true"
+      - "traefik.http.middlewares.jira-gzip-compression.compress=true"
+      - "traefik.http.middlewares.jira-cloudflare.plugin.cloudflare"
+      - "traefik.http.routers.jira-web.rule=Host(`jira.example.com`)"
+      - "traefik.http.routers.jira-web.entrypoints=websecure"
+      - "traefik.http.routers.jira-web.tls=true"
+      - "traefik.http.routers.jira-web.tls.certresolver=le"
+      - "traefik.http.routers.jira-web.service=jira-web"
+      - "traefik.http.routers.jira-web.middlewares=jira-secure-headers,jira-gzip-compression,jira-cloudflare"
+      - "traefik.http.services.jira-web.loadbalancer.server.port=8080"
+    environment:
+      TZ: Etc/UTC
+      ATL_PROXY_NAME: jira.example.com
+      ATL_PROXY_PORT: "443"
+      ATL_TOMCAT_SCHEME: https
+      ATL_TOMCAT_SECURE: "true"
+      JVM_MINIMUM_MEMORY: 512m
+      JVM_MAXIMUM_MEMORY: 2048m
+      JVM_RESERVED_CODE_CACHE_SIZE: 512m
+      ATL_DB_DRIVER: org.postgresql.Driver
+      ATL_DB_TYPE: postgres72
+      ATL_JDBC_URL: jdbc:postgresql://postgres:5432/jira
+      ATL_JDBC_USER: jira
+      ATL_JDBC_PASSWORD: jira
+    volumes:
+      - jira-data:/var/atlassian/application-data/jira
+    networks:
+      - traefik
+      - jira
+    depends_on:
+      - postgres
+  
+  postgres:
+    container_name: postgres
+    image: postgres:15-alpine
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      TZ: Etc/UTC
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./initdb.d:/docker-entrypoint-initdb.d:ro,Z
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 32000
+        hard: 40000
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jira
+
+volumes:
+  jira-data:
+  postgres-data:
+
+networks:
+  jira:
+  traefik:
+    external: true

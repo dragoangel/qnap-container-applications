@@ -1,0 +1,71 @@
+version: '3'
+services:
+  traefik:
+    container_name: traefik
+    image: traefik:3.0
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      - "80:80"
+      - "443:443/tcp"
+      - "443:443/udp"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.traefik-auth.basicauth.realm=Traefik API"
+      # Note: when used in docker-compose.yml all dollar signs in the hash need to be doubled for escaping.
+      # To create a user:password pair, the following command can be used:
+      # echo $(htpasswd -nb traefik traefik) | sed -e s/\\$/\\$\\$/g
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=traefik:$$apr1$$6aPAmW/7$$VAc3uEDD1izB0ggeSw.WX1"
+      - "traefik.http.middlewares.traefik-auth.basicauth.removeheader=true"
+      - "traefik.http.middlewares.traefik-cloudflare.plugin.cloudflare"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.example.com`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls=true"
+      - "traefik.http.routers.traefik.tls.certresolver=le"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.middlewares=traefik-auth,traefik-cloudflare"
+    command:
+      - "--api.dashboard=true"
+      - "--log.level=ERROR"
+      - "--accesslog"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=traefik"
+      - "--entrypoints.ping.address=:8080"
+      - "--ping=true"
+      - "--ping.entrypoint=ping"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http3"
+      - "--entrypoints.websecure.http3.advertisedport=443"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.le.acme.email=john.doe@example.com"
+      - "--certificatesresolvers.le.acme.caserver=https://acme-v02.api.letsencrypt.org/directory"
+      - "--certificatesresolvers.le.acme.httpchallenge=true"
+      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+      - "--global.checknewversion=false"
+      - "--global.sendanonymoususage=false"
+      - "--experimental.plugins.cloudflare.modulename=github.com/Desuuuu/traefik-cloudflare-plugin"
+      - "--experimental.plugins.cloudflare.version=v1.0.0"
+    environment:
+      TZ: Etc/UTC
+    volumes:
+      - letsencrypt-data:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro,Z
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/traefik", "healthcheck", "--ping"]
+      interval: 240s
+      timeout: 5s
+      retries: 1
+      start_period: 10s
+    networks:
+      - traefik
+
+volumes:
+  letsencrypt-data:
+
+networks:
+  traefik:
+    name: traefik
