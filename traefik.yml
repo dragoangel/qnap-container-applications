@@ -68,6 +68,8 @@ services:
         max-file: "5"
         max-size: "10m"
         compress: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - traefik
 
