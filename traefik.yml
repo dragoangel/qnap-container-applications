@@ -29,8 +29,11 @@ services:
       - "--log.level=ERROR"
       - "--accesslog"
       - "--providers.docker=true"
+      - "--providers.docker.allowemptyservices=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=traefik"
+      - "--providers.file.directory=/conf.d"
+      - "--providers.file.watch=true"
       - "--entrypoints.ping.address=:8080"
       - "--ping=true"
       - "--ping.entrypoint=ping"
@@ -40,7 +43,7 @@ services:
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.http3"
       - "--entrypoints.websecure.http3.advertisedport=443"
-      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.le.acme.storage=/acme/acme.json"
       - "--certificatesresolvers.le.acme.email=john.doe@example.com"
       - "--certificatesresolvers.le.acme.caserver=https://acme-v02.api.letsencrypt.org/directory"
       - "--certificatesresolvers.le.acme.httpchallenge=true"
@@ -49,22 +52,56 @@ services:
       - "--global.sendanonymoususage=false"
       - "--experimental.plugins.cloudflare.modulename=github.com/Desuuuu/traefik-cloudflare-plugin"
       - "--experimental.plugins.cloudflare.version=v1.0.0"
-    environment:
-      TZ: Etc/UTC
     volumes:
-      - letsencrypt-data:/letsencrypt
+      - ./acme:/acme:rw
+      - ./conf.d:/conf.d:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro,Z
     healthcheck:
       test: ["CMD", "/usr/local/bin/traefik", "healthcheck", "--ping"]
-      interval: 240s
+      interval: 30s
       timeout: 5s
-      retries: 1
+      retries: 3
       start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "5"
+        max-size: "10m"
+        compress: "true"
     networks:
       - traefik
 
-volumes:
-  letsencrypt-data:
+  certdumper:
+    container_name: certdumper
+    image: ghcr.io/kereis/traefik-certs-dumper:sha-0c3f27d
+    restart: unless-stopped
+    # Uncomment to restart conteiners after renewing certificates:
+    #command: --restart-containers container1,container2,container3
+    environment:
+      # Uncomment to limit cert dumping to specific domains
+      #DOMAIN: example.com,example.org,example.net
+      ACME_FILE_PATH: /acme/acme.json
+      OVERRIDE_UID: 1000
+      OVERRIDE_GID: 1000
+      COMBINED_PEM: combined.pem
+      CONVERT_KEYS_TO_RSA: "yes"
+    volumes:
+    - ./acme:/acme:ro
+    - ./ssl:/output:rw
+    - /var/run/docker.sock:/var/run/docker.sock:ro,Z
+    healthcheck:
+      test: ["CMD", "/usr/bin/healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "5"
+        max-size: "10m"
+        compress: "true"
+    networks:
+      - traefik
 
 networks:
   traefik:
